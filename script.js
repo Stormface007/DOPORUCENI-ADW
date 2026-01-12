@@ -2,48 +2,55 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbw8rB0B_ZOM0gYMLVXB7CMB
 
 async function loadAnalyses() {
   const res = await fetch(API_URL);
-  if (!res.ok) {
-    throw new Error('Chyba při načítání dat: ' + res.status);
-  }
+  if (!res.ok) throw new Error('Chyba při načítání dat: ' + res.status);
   return await res.json();
 }
 
-function vyhodnotVapneni(bod) {
-  const pH  = Number(bod.PH);
-  const ca  = Number(bod.CA);
-  const mg  = Number(bod.MG);
-  const kvk = Number(bod.KVK);
-  const org = Number(bod.ORG_HMOTA);
-
-  // TODO: sem budeme postupně psát tvoje reálná pravidla
-  return {
-    vapnit: false,
-    produkt: null,
-    davka_t_ha: 0,
-    komentar: 'Logika vápnění zatím není nastavená.'
-  };
+function getUniqueFields(rows) {
+  const map = new Map();
+  rows.forEach(row => {
+    const key = row.Název; // můžeš změnit na kombinaci
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        čtverec: row.Čtverec,
+        zkod: row.Zkod,
+        název: row.Název
+      });
+    }
+  });
+  return Array.from(map.values());
 }
 
-document.getElementById('loadBtn').addEventListener('click', async () => {
-  const out = document.getElementById('output');
-  out.textContent = 'Načítám...';
+function renderFields(fields) {
+  const container = document.getElementById('fieldsContainer');
+  container.innerHTML = '';
+
+  fields.forEach((f, index) => {
+    const id = `field-${index}`;
+    const wrapper = document.createElement('div');
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = id;
+    checkbox.value = f.key;
+
+    const label = document.createElement('label');
+    label.htmlFor = id;
+    label.textContent = `${f.čtverec} | ${f.zkod} | ${f.název}`;
+
+    wrapper.appendChild(checkbox);
+    wrapper.appendChild(label);
+    container.appendChild(wrapper);
+  });
+}
+
+document.getElementById('loadFieldsBtn').addEventListener('click', async () => {
   try {
-    const data = await loadAnalyses();
-    out.textContent = JSON.stringify(data.slice(0, 5), null, 2);
+    const rows = await loadAnalyses();
+    const fields = getUniqueFields(rows);
+    renderFields(fields);
   } catch (e) {
-    out.textContent = 'Chyba: ' + e.message;
+    alert('Chyba při načítání: ' + e.message);
   }
 });
-
-document.getElementById('evalBtn').addEventListener('click', () => {
-  const bod = {
-    PH:        document.getElementById('phInput').value,
-    CA:        document.getElementById('caInput').value,
-    MG:        document.getElementById('mgInput').value,
-    KVK:       document.getElementById('kvkInput').value,
-    ORG_HMOTA: document.getElementById('orgInput').value
-  };
-  const res = vyhodnotVapneni(bod);
-  document.getElementById('result').textContent = JSON.stringify(res, null, 2);
-});
-
