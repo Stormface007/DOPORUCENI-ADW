@@ -1,1 +1,39 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <title>Doporučení vápnění – prototyp</title>
+</head>
+<body>
+  <h1>Doporučení vápnění – DATA</h1>
+
+  <button id="loadBtn">Načíst analýzy</button>
+  <pre id="output"></pre>
+
+  <script>
+    // TODO: sem vlož URL webové aplikace z Apps Scriptu
+    const API_URL = 'https://script.google.com/macros/s/AKfycbw8rB0B_ZOM0gYMLVXB7CMBqx2H2W-5DhBICHP_qVFQXhJt84-8KNOZ96nB2_evQAe9/exec';
+
+    async function loadAnalyses() {
+      const res = await fetch(API_URL);
+      if (!res.ok) {
+        throw new Error('Chyba při načítání dat: ' + res.status);
+      }
+      return await res.json();
+    }
+
+    document.getElementById('loadBtn').addEventListener('click', async () => {
+      const out = document.getElementById('output');
+      out.textContent = 'Načítám...';
+      try {
+        const data = await loadAnalyses();
+        // zobrazíme jen prvních pár řádků, ať je to přehledné
+        out.textContent = JSON.stringify(data.slice(0, 5), null, 2);
+      } catch (e) {
+        out.textContent = 'Chyba: ' + e.message;
+      }
+    });
+  </script>
+</body>
+</html>
 
