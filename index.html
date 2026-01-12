@@ -5,19 +5,11 @@
   <title>Doporučení vápnění – prototyp</title>
 </head>
 <body>
-  <h1>Doporučení vápnění – DATA</h1>
+  <h1>Doporučení vápnění – výběr polí</h1>
 
-  <button id="loadBtn">Načíst analýzy</button>
-  <pre id="output"></pre>
+<button id="loadFieldsBtn">Načíst seznam polí</button>
+<div id="fieldsContainer"></div>
 
-  <h2>Ručně zadat bod</h2>
-  <label>pH: <input id="phInput" type="number" step="0.1"></label>
-  <label>Ca (ppm): <input id="caInput" type="number"></label>
-  <label>Mg (ppm): <input id="mgInput" type="number"></label>
-  <label>KVK: <input id="kvkInput" type="number"></label>
-  <label>ORG_HMOTA (%): <input id="orgInput" type="number" step="0.1"></label>
-  <button id="evalBtn">Vyhodnotit vápnění</button>
-  <pre id="result"></pre>
 
   <script src="script.js"></script>
 </body>
