@@ -1,4 +1,4 @@
-const API_URL = 'https://script.google.com/macros/library/d/1h4CW6BlhINqJYJatyaOAcbp377iB-UI9v93CVYw5ox1-7XGeF8uNS1vK/1';
+const API_URL = 'https://script.google.com/macros/s/AKfycbw8rB0B_ZOM0gYMLVXB7CMBqx2H2W-5DhBICHP_qVFQXhJt84-8KNOZ96nB2_evQAe9/exec';
 
 async function loadAnalyses() {
   const res = await fetch(API_URL);
