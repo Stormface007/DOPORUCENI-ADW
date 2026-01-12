@@ -9,18 +9,19 @@ async function loadAnalyses() {
 function getUniqueFields(rows) {
   const map = new Map();
   rows.forEach(row => {
-    const key = row.Název; // můžeš změnit na kombinaci
+    const key = row['Název'];               // POZOR na diakritiku a velké N
     if (!map.has(key)) {
       map.set(key, {
         key,
-        čtverec: row.Čtverec,
-        zkod: row.Zkod,
-        název: row.Název
+        čtverec: row['Čtverec'],
+        zkod: row['Zkod'],
+        název: row['Název']
       });
     }
   });
   return Array.from(map.values());
 }
+
 
 function renderFields(fields) {
   const container = document.getElementById('fieldsContainer');
