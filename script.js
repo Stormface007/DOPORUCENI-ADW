@@ -33,24 +33,15 @@ function renderFields(fields) {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.id = id;
-    checkbox.value = f.key;
+    checkbox.value = f.key;          // klíč = název pole
 
     const label = document.createElement('label');
     label.htmlFor = id;
-    label.textContent = `${f.čtverec} | ${f.zkod} | ${f.název}`;
+    // dříve: `${f.čtverec} | ${f.zkod} | ${f.název}`
+    label.textContent = f.název;     // zobrazí se jen název
 
     wrapper.appendChild(checkbox);
     wrapper.appendChild(label);
     container.appendChild(wrapper);
   });
 }
-
-document.getElementById('loadFieldsBtn').addEventListener('click', async () => {
-  try {
-    const rows = await loadAnalyses();
-    const fields = getUniqueFields(rows);
-    renderFields(fields);
-  } catch (e) {
-    alert('Chyba při načítání: ' + e.message);
-  }
-});
