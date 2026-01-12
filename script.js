@@ -37,6 +37,12 @@ function fillFieldSelect(fields) {
   });
 }
 
+function urciTypPudy(kvk) {
+  if (kvk <= 120) return 'lehká';
+  if (kvk <= 200) return 'střední';
+  return 'těžká';
+}
+
 // jednoduché vyhodnocení vápnění pro jeden bod – kostra
 function vyhodnotVapneniBod(bod) {
   const pH  = Number(bod['PH']);
@@ -45,22 +51,23 @@ function vyhodnotVapneniBod(bod) {
   const kvk = Number(bod['KVK']);
   const org = Number(bod['ORG_HMOTA']);
 
-  // ZÁKLADNÍ PRAVIDLO – lze později zpřesnit:
-  //  - pokud pH >= 6.8 → nevápnit, vysvětlit proč
+  const typPudy = urciTypPudy(kvk);
+
+  // základní pravidlo: při vyšším pH už nevápnit
   if (pH >= 6.8) {
     return {
       vapnit: false,
-      duvod: `pH = ${pH.toFixed(1)} (nad optimem), vysoká zásoba Ca (${ca.toFixed(0)} ppm), vápnit by zbytečně zvyšovalo pH.`
+      duvod: `pH = ${pH.toFixed(1)} (nad optimem), typ půdy ${typPudy}, vysoká zásoba Ca (${ca.toFixed(0)} ppm); vápnění by zbytečně zvyšovalo pH.`
     };
   }
 
-  // do budoucna sem přidáme další větve (kyselé půdy, Mg deficit atd.)
-
+  // další větve doplníme později (kyselé půdy, Mg deficit atd.)
   return {
     vapnit: false,
-    duvod: `Pravidla vápnění zatím nejsou plně nastavená (pH = ${pH.toFixed(1)}).`
+    duvod: `pH = ${pH.toFixed(1)}, typ půdy ${typPudy}; detailní pravidla vápnění zatím nejsou nastavená.`
   };
 }
+
 
 function vyhodnotVapneniPole(nazevPole) {
   const bodyPole = allRows.filter(r => r['Název'] === nazevPole);
@@ -134,3 +141,10 @@ resultsDiv.innerHTML = html;
 document.addEventListener('DOMContentLoaded', () => {
   initModal();
 });
+
+function urciTypPudy(kvk) {
+  if (kvk <= 120) return 'lehká';
+  if (kvk <= 200) return 'střední';
+  return 'těžká';
+}
+
