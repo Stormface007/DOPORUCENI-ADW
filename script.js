@@ -1,11 +1,12 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbxPdGIduQhxL3ZVBh85jo7T8-fFb0botFxE8VesqRx3vc70jKAlgpQy0g3rxEOGdhq1/exec';
 
-let allRows = [];   // sem uložíme všechna data z listu DATA
+let allRows = [];
 
+// === Načtení dat z listu DATA ===
 async function loadAnalyses() {
   const res = await fetch(API_URL);
   if (!res.ok) throw new Error('Chyba při načítání dat: ' + res.status);
-  return await res.json(); // A3:AA10000 jako objekty
+  return await res.json();
 }
 
 function getUniqueFields(rows) {
@@ -37,136 +38,117 @@ function fillFieldSelect(fields) {
   });
 }
 
+// === Pomocné funkce ===
 function urciTypPudy(kvk) {
-  if (kvk <= 120) return 'lehká';
-  if (kvk <= 180) return 'střední';
-  return 'těžká';
+  if (kvk < 120) return 'lehka';
+  if (kvk <= 200) return 'stredni';
+  return 'tezka';
 }
 
-// orientační přepočet relativního Ca2+ deficitu na kg Ca/ha (hodně zjednodušené)
-function odhadCaDeficitKgHa(caPlus, kvk) {
-  // caPlus je rozdíl proti cíli v "relativních bodech" z listu DATA (sloupec Ca2+).
-  // pro hrubý odhad vezmeme, že 100 bodů ≈ 400 kg Ca/ha u střední půdy
-  const base = 400; // kg Ca/ha pro 100 bodů u střední půdy
-  let faktorPudy = 1.0;
-  if (kvk <= 120) faktorPudy = 0.7;     // lehká – menší zásoba v profilu
-  else if (kvk > 180) faktorPudy = 1.3; // těžká – vyšší zásoba
-
-  const deficitBody = Math.abs(caPlus); // caPlus je záporný při deficitu
-  return (deficitBody / 100) * base * faktorPudy;
+function urciIntervalovyRadek(pH) {
+  if (pH <= 5.0) return 'do5';
+  if (pH > 5.0 && pH <= 5.5) return '5_55';
+  if (pH > 5.5 && pH <= 6.0) return '55_60';
+  if (pH > 6.0 && pH <= 6.5) return '60_65';
+  return 'nad65';
 }
 
-// strategické vyhodnocení vápnění pro jeden bod
+// === Tabulka „vapno objemy“ převedená do JS ===
+// hodnoty jsou v t/ha produktu, poslední sloupec je interval (roky)
+const vapnoTabulka = {
+  lehka: {
+    do5:   { nemecko: 3.0, prodA: 2.0, prodB: 1.7, interval: 2 },
+    5_55:  { nemecko: 2.0, prodA: 1.3, prodB: 1.1, interval: 3 },
+    55_60: { nemecko: 0,   prodA: 0,   prodB: 0,   interval: 0 }, // není v tabulce – nevápnit
+    60_65: { nemecko: 0,   prodA: 0,   prodB: 0,   interval: 0 },
+    nad65: { nemecko: 0,   prodA: 0,   prodB: 0,   interval: 0 }
+  },
+  stredni: {
+    do5:   { nemecko: 4.0, prodA: 3.0, prodB: 2.5, interval: 3 },
+    5_55:  { nemecko: 3.0, prodA: 2.3, prodB: 2.0, interval: 3 }, // 3–4 roky → vezmeme 3
+    55_60: { nemecko: 2.5, prodA: 1.9, prodB: 1.6, interval: 4 },
+    60_65: { nemecko: 2.0, prodA: 1.5, prodB: 1.2, interval: 4 },
+    nad65: { nemecko: 0,   prodA: 0,   prodB: 0,   interval: 0 }
+  },
+  tezka: {
+    do5:   { nemecko: 5.0, prodA: 4.0, prodB: 3.5, interval: 5 }, // 4–5 let → 5
+    5_55:  { nemecko: 4.0, prodA: 3.1, prodB: 2.7, interval: 5 }, // 5–6 let → 5
+    55_60: { nemecko: 3.0, prodA: 2.3, prodB: 2.0, interval: 5 },
+    60_65: { nemecko: 2.5, prodA: 1.9, prodB: 1.6, interval: 6 },
+    nad65: { nemecko: 0,   prodA: 0,   prodB: 0,   interval: 0 }
+  }
+};
+
+// === Výběr produktu podle Mg ===
+// Mg2+ < 0 = deficit → Produkt A (Ca + Mg), jinak Produkt B (téměř čisté Ca)
+function vyberProdukt(mgPlus) {
+  if (mgPlus < 0) return 'Produkt A (Ca + Mg)';
+  return 'Produkt B (Ca převládá)';
+}
+
+// === Jádro: vyhodnocení jednoho bodu ===
 function vyhodnotVapneniBod(bod) {
   const pH   = Number(bod['PH']);
+  const kvk  = Number(bod['KVK']);
   const ca   = Number(bod['CA']);
   const mg   = Number(bod['MG']);
-  const kvk  = Number(bod['KVK']);
   const org  = Number(bod['ORG_HMOTA']);
+  const caPlus = Number(bod['Ca2+']);
+  const mgPlus = Number(bod['Mg2+']);
+  const kPlus  = Number(bod['K+']);
 
-  const kPlus   = Number(bod['K+']);    // nadbytek/deficit K (relativní)
-  const caPlus  = Number(bod['Ca2+']);  // nadbytek/deficit Ca (relativní)
-  const mgPlus  = Number(bod['Mg2+']);  // nadbytek/deficit Mg (relativní)
-
-  const typPudy = urciTypPudy(kvk);
-
-  // 0) pokud chybí klíčová data, nic nepočítat
-  if (isNaN(pH) || isNaN(kvk) || isNaN(caPlus) || isNaN(mgPlus)) {
+  if (isNaN(pH) || isNaN(kvk)) {
     return {
       vapnit: false,
-      duvod: `Chybí údaje pro výpočet (pH/KVK/Ca2+/Mg2+). Rozhodnutí je nutné udělat individuálně.`
+      duvod: 'Chybí pH nebo KVK, nelze automaticky doporučit vápnění.'
     };
   }
 
-  // 1) Vysoké pH – zásadně NEVÁPNIT, i když je Ca2+ v deficitu
+  const typ = urciTypPudy(kvk);
+  const rada = urciIntervalovyRadek(pH);
+  const zapis = vapnoTabulka[typ][rada];
+
+  // Bezpečnostní brzda – vysoké pH → nevápnit
   if (pH >= 7.0) {
     return {
       vapnit: false,
       duvod:
-        `pH = ${pH.toFixed(1)} (vyšší/vysoké), typ půdy ${typPudy}. ` +
-        `Ca2+ = ${caPlus.toFixed(0)}, Mg2+ = ${mgPlus.toFixed(0)}, K+ = ${kPlus.toFixed(0)} (kladné = nadbytek, záporné = deficit). ` +
-        `V této reakci se vápnění zásobně neprovádí; Ca řešit jen plodinově a hlídat blokace P – zásobní P se nedává.`
+        `pH = ${pH.toFixed(1)} (vyšší/vysoké), typ půdy ${typ}. ` +
+        `Ca ≈ ${ca.toFixed(0)} ppm, Ca2+ = ${caPlus.toFixed(0)}. ` +
+        `Zásobní vápnění se v této reakci neprovádí; fosfor jen plodinově, bez zásobních dávek kvůli blokacím.`
     };
   }
 
-  // 2) Ca2+ zhruba v cíli – nevápnit, jen sledovat trend
-  if (caPlus > -50 && caPlus < 50) {
+  // Pokud v tabulce není dávka (0), tak nevápnit – jen komentář
+  if (!zapis || zapis.prodA === 0 && zapis.prodB === 0) {
     return {
       vapnit: false,
       duvod:
-        `pH = ${pH.toFixed(1)}, typ půdy ${typPudy}. ` +
-        `Ca2+ blízko cílového zastoupení (${caPlus.toFixed(0)}), Mg2+ = ${mgPlus.toFixed(0)}, K+ = ${kPlus.toFixed(0)}. ` +
-        `Strategie: nevápnit, spíš sledovat trend pH a organické hmoty (ORG = ${org.toFixed(1)} %).`
+        `pH = ${pH.toFixed(1)}, typ půdy ${typ}. Pro tuto kombinaci pH a KVK není v tabulce zásobní dávka; ` +
+        `Ca2+ = ${caPlus.toFixed(0)}, Mg2+ = ${mgPlus.toFixed(0)}, ORG = ${org.toFixed(1)} %. ` +
+        `Strategie: zatím nevápnit, sledovat vývoj pH a plodinové požadavky.`
     };
   }
 
-  // 3) Nadbytek Ca2+ – rozhodně nevápnit
-  if (caPlus >= 50) {
-    return {
-      vapnit: false,
-      duvod:
-        `pH = ${pH.toFixed(1)}, typ půdy ${typPudy}. ` +
-        `Ca2+ v nadbytku (+${caPlus.toFixed(0)}), Mg2+ = ${mgPlus.toFixed(0)}. ` +
-        `Vápnění by nadbytek Ca ještě zvyšovalo; strategie je Ca dál nezvyšovat a zaměřit se spíš na Mg/K a organiku.`
-    };
-  }
+  // Rozhodnutí o produktu
+  const produktNazev = vyberProdukt(mgPlus);
+  const davka = (mgPlus < 0) ? zapis.prodA : zapis.prodB;
+  const interval = zapis.interval;
 
-  // 4) Deficit Ca2+ – zvažujeme zásobní vápnění na několik let
-  if (caPlus <= -50) {
-    // základ: odhad aktuálního deficitu Ca v kg/ha
-    const caDeficitKg = odhadCaDeficitKgHa(caPlus, kvk); // kladné číslo v kg Ca/ha
-    const roky = 5; // plánované období zásobního efektu
-
-    const rocniUbytekCa = 150; // kg Ca/ha/rok
-    const rocniUbytekMg = 15;  // kg Mg/ha/rok
-
-    const zasobaCaKg = roky * rocniUbytekCa; // zásoba Ca na X let
-    const zasobaMgKg = roky * rocniUbytekMg; // zásoba Mg na X let
-
-    const celkemCaKg = caDeficitKg + zasobaCaKg;
-
-    // hrubý přepočet na t/ha vápence:
-    // 1 t vápence ~ 300 kg CaO → ~ 215 kg Ca (přibližně)
-    const kgCaNaTunu = 215;
-    let davka = celkemCaKg / kgCaNaTunu; // t/ha
-
-    // mírná korekce podle typu půdy
-    if (typPudy === 'lehká') davka *= 0.8;
-    if (typPudy === 'těžká') davka *= 1.2;
-
-    // omezení na rozumné rozmezí
-    if (davka < 1) davka = 1;
-    if (davka > 5) davka = 5;
-
-    // volba typu produktu – jen kostra podle Mg2+
-    let produkt = 'vápenec Ca (bez Mg)';
-    if (mgPlus <= -30) {
-      produkt = 'dolomitický vápenec (Ca + Mg)';
-    }
-
-    return {
-      vapnit: true,
-      produkt,
-      davka_t_ha: Number(davka.toFixed(1)),
-      duvod:
-        `pH = ${pH.toFixed(1)}, typ půdy ${typPudy}. ` +
-        `Ca2+ v deficitu (${caPlus.toFixed(0)}), Mg2+ = ${mgPlus.toFixed(0)}, K+ = ${kPlus.toFixed(0)}. ` +
-        `Dávka ${davka.toFixed(1)} t/ha je spočítaná jako zásobní – pokrývá aktuální deficit Ca ` +
-        `a zhruba ${roky} let očekávaného úbytku (≈ ${rocniUbytekCa} kg Ca/ha/rok a ${rocniUbytekMg} kg Mg/ha/rok). ` +
-        `Nejde o jednorázové dorovnání na cílové procento, ale o dlouhodobou strategii.`
-    };
-  }
-
-  // fallback – Ca2+ trochu v mínusu, ale ne výrazně
   return {
-    vapnit: false,
+    vapnit: true,
+    produkt: produktNazev,
+    davka_t_ha: davka,
+    interval_let: interval,
     duvod:
-      `pH = ${pH.toFixed(1)}, typ půdy ${typPudy}. ` +
-      `Ca2+ lehce pod cílem (${caPlus.toFixed(0)}), Mg2+ = ${mgPlus.toFixed(0)}. ` +
-      `Zásobní vápnění se zatím neprovádí, rozhodnutí lze doladit podle plodiny a plánovaného osevního postupu.`
+      `pH = ${pH.toFixed(1)}, typ půdy ${typ}. Podle tabulky „vapno objemy“ vychází zásobní dávka ` +
+      `${davka.toFixed(1)} t/ha (produkt: ${produktNazev}), opakovat přibližně každých ${interval} let. ` +
+      `Ca ≈ ${ca.toFixed(0)} ppm (Ca2+ = ${caPlus.toFixed(0)}), Mg ≈ ${mg.toFixed(0)} ppm (Mg2+ = ${mgPlus.toFixed(0)}), ` +
+      `K+ = ${kPlus.toFixed(0)}, ORG = ${org.toFixed(1)} %. Dávka je myšlená jako zásobní na více let, ne k okamžitému dorovnání cílových procent.`
   };
 }
 
+// === Vyhodnocení pro celé pole ===
 function vyhodnotVapneniPole(nazevPole) {
   const bodyPole = allRows.filter(r => r['Název'] === nazevPole);
   if (!bodyPole.length) {
@@ -178,7 +160,9 @@ function vyhodnotVapneniPole(nazevPole) {
     const res = vyhodnotVapneniBod(bod);
 
     if (res.vapnit) {
-      return `<li><strong>Bod ${cislo}</strong>: VÁPNIT – produkt: ${res.produkt}, dávka: ${res.davka_t_ha} t/ha.<br>Důvod: ${res.duvod}</li>`;
+      return `<li><strong>Bod ${cislo}</strong>: VÁPNIT – produkt: ${res.produkt}, ` +
+             `dávka: ${res.davka_t_ha.toFixed(1)} t/ha, interval: cca ${res.interval_let} let.<br>` +
+             `Důvod: ${res.duvod}</li>`;
     } else {
       return `<li><strong>Bod ${cislo}</strong>: NEVÁPNIT – ${res.duvod}</li>`;
     }
@@ -187,7 +171,7 @@ function vyhodnotVapneniPole(nazevPole) {
   return `<ul>${items.join('')}</ul>`;
 }
 
-// MODAL – otevření / zavření
+// === MODAL – otevření / zavření ===
 function initModal() {
   const modal = document.getElementById('vapneniModal');
   const openBtn = document.getElementById('openModalBtn');
@@ -230,7 +214,7 @@ function initModal() {
   });
 }
 
-// inicializace po načtení
+// === inicializace po načtení stránky ===
 document.addEventListener('DOMContentLoaded', () => {
   initModal();
 });
