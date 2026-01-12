@@ -3,13 +3,28 @@
 <head>
   <meta charset="UTF-8" />
   <title>Doporučení vápnění – prototyp</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <h1>Doporučení vápnění – výběr polí</h1>
+  <h1>Doporučení vápnění</h1>
 
-<button id="loadFieldsBtn">Načíst seznam polí</button>
-<div id="fieldsContainer"></div>
+  <button id="openModalBtn">Otevřít doporučení vápnění</button>
 
+  <div id="vapneniModal" class="modal">
+    <div class="modal-content">
+      <span id="closeModalBtn" class="close">&times;</span>
+      <h2>Doporučení vápnění</h2>
+
+      <label for="fieldSelect">Vyber pole</label>
+      <select id="fieldSelect">
+        <option value="">-- vyber pole --</option>
+      </select>
+
+      <button id="evaluateBtn">Vyhodnotit vápnění</button>
+
+      <div id="resultsContainer"></div>
+    </div>
+  </div>
 
   <script src="script.js"></script>
 </body>
