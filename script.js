@@ -111,19 +111,21 @@ function initModal() {
     if (e.target === modal) modal.style.display = 'none';
   });
 
-  evaluateBtn.addEventListener('click', () => {
-    const select = document.getElementById('fieldSelect');
-    const nazevPole = select.value;
-    const resultsDiv = document.getElementById('resultsContainer');
+ evaluateBtn.addEventListener('click', () => {
+  const select = document.getElementById('fieldSelect');
+  const nazevPole = select.value;
+  const resultsDiv = document.getElementById('resultsContainer');
 
-    if (!nazevPole) {
-      resultsDiv.textContent = 'Nejprve vyber pole.';
-      return;
-    }
+  if (!nazevPole) {
+    resultsDiv.textContent = 'Nejprve vyber pole.';
+    return;
+  }
 
-    const text = vyhodnotVapneniPole(nazevPole);
-    resultsDiv.textContent = text;
-  });
+  // SEM patří ten kód:
+  const text = vyhodnotVapneniPole(nazevPole);
+  resultsDiv.textContent = text;
+});
+
 }
 
 // inicializace po načtení
