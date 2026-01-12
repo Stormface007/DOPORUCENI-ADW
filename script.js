@@ -65,22 +65,23 @@ function vyhodnotVapneniBod(bod) {
 function vyhodnotVapneniPole(nazevPole) {
   const bodyPole = allRows.filter(r => r['Název'] === nazevPole);
   if (!bodyPole.length) {
-    return `Pro pole "${nazevPole}" nebyly nalezeny žádné body.`;
+    return '<p>Pro pole "' + nazevPole + '" nebyly nalezeny žádné body.</p>';
   }
 
-  const lines = bodyPole.map(bod => {
+  const items = bodyPole.map(bod => {
     const cislo = bod['Číslo bodu'];
     const res = vyhodnotVapneniBod(bod);
 
     if (res.vapnit) {
-      return `Bod ${cislo}: VÁPNIT – produkt: ${res.produkt}, dávka: ${res.davka_t_ha} t/ha. Důvod: ${res.duvod}`;
+      return `<li><strong>Bod ${cislo}</strong>: VÁPNIT – produkt: ${res.produkt}, dávka: ${res.davka_t_ha} t/ha.<br>Důvod: ${res.duvod}</li>`;
     } else {
-      return `Bod ${cislo}: NEVÁPNIT – ${res.duvod}`;
+      return `<li><strong>Bod ${cislo}</strong>: NEVÁPNIT – ${res.duvod}</li>`;
     }
   });
 
-  return lines.join('\n');   // tady musí být \n
+  return `<ul>${items.join('')}</ul>`;
 }
+
 
 
 // MODAL – otevření / zavření
@@ -122,8 +123,9 @@ function initModal() {
   }
 
   // SEM patří ten kód:
-  const text = vyhodnotVapneniPole(nazevPole);
-  resultsDiv.textContent = text;
+  const html = vyhodnotVapneniPole(nazevPole);
+resultsDiv.innerHTML = html;
+
 });
 
 }
