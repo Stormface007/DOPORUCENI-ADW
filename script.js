@@ -79,7 +79,7 @@ function vyhodnotVapneniPole(nazevPole) {
     }
   });
 
-  return lines.join('\n');          // každý bod na svůj řádek
+  return lines.join('\n');   // tady musí být \n
 }
 
 
