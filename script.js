@@ -68,19 +68,20 @@ function vyhodnotVapneniPole(nazevPole) {
     return `Pro pole "${nazevPole}" nebyly nalezeny žádné body.`;
   }
 
-  const lines = [];
-  bodyPole.forEach(bod => {
+  const lines = bodyPole.map(bod => {
     const cislo = bod['Číslo bodu'];
     const res = vyhodnotVapneniBod(bod);
+
     if (res.vapnit) {
-      lines.push(`Bod ${cislo}: VÁPNIT – produkt: ${res.produkt}, dávka: ${res.davka_t_ha} t/ha. Důvod: ${res.duvod}`);
+      return `Bod ${cislo}: VÁPNIT – produkt: ${res.produkt}, dávka: ${res.davka_t_ha} t/ha. Důvod: ${res.duvod}`;
     } else {
-      lines.push(`Bod ${cislo}: NEVÁPNIT – ${res.duvod}`);
+      return `Bod ${cislo}: NEVÁPNIT – ${res.duvod}`;
     }
   });
 
-  return lines.join('\n');
+  return lines.join('\n');          // každý bod na svůj řádek
 }
+
 
 // MODAL – otevření / zavření
 function initModal() {
