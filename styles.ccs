@@ -34,3 +34,14 @@
   white-space: pre-wrap;
 }
 
+#resultsContainer ul {
+  padding-left: 20px;
+  margin-top: 8px;
+}
+
+#resultsContainer li {
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+
