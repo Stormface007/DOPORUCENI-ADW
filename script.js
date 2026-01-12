@@ -53,11 +53,9 @@ function urciIntervalovyRadek(pH) {
   return 'nad65';
 }
 
-// === Tabulka „vapno objemy“ převedená do JS ===
-// čísla z tvého listu; poslední číslo je orientační interval v letech
+// === Tabulka „vapno objemy“ (t/ha produktu) ===
 const vapnoTabulka = {
   lehka: {
-    // písčité, KVK < 120
     do5:   { nemecko: 3.0, prodA: 2.0, prodB: 1.7, interval: 2 },
     5_55:  { nemecko: 2.0, prodA: 1.3, prodB: 1.1, interval: 3 },
     55_60: { nemecko: 0.0, prodA: 0.0, prodB: 0.0, interval: 0 },
@@ -65,7 +63,6 @@ const vapnoTabulka = {
     nad65: { nemecko: 0.0, prodA: 0.0, prodB: 0.0, interval: 0 }
   },
   stredni: {
-    // hlinité, KVK 120–200
     do5:   { nemecko: 4.0, prodA: 3.0, prodB: 2.5, interval: 3 },
     5_55:  { nemecko: 3.0, prodA: 2.3, prodB: 2.0, interval: 3 }, // 3–4 roky
     55_60: { nemecko: 2.5, prodA: 1.9, prodB: 1.6, interval: 4 },
@@ -73,7 +70,6 @@ const vapnoTabulka = {
     nad65: { nemecko: 0.0, prodA: 0.0, prodB: 0.0, interval: 0 }
   },
   tezka: {
-    // jílovité, KVK > 200
     do5:   { nemecko: 5.0, prodA: 4.0, prodB: 3.5, interval: 5 }, // 4–5 let
     5_55:  { nemecko: 4.0, prodA: 3.1, prodB: 2.7, interval: 5 }, // 5–6 let
     55_60: { nemecko: 3.0, prodA: 2.3, prodB: 2.0, interval: 5 },
@@ -88,16 +84,37 @@ function vyberProdukt(mgPlus) {
   return 'Produkt B (převážně Ca)';
 }
 
+// === Nasycení – cílové hodnoty ===
+// obecně Ca 70–80 %, Mg 10–20 %, K 2–5 % [web:117][web:124]
+function vyhodnotNasyceni(typ, satCa, satMg, satK) {
+  const optCaMin = 70;
+  const optCaMax = 80;
+
+  let deficitCa = false;
+  let silnyDeficitCa = false;
+
+  if (!isNaN(satCa)) {
+    if (satCa < optCaMin - 5) deficitCa = true;     // < 65 %
+    if (satCa < optCaMin - 15) silnyDeficitCa = true; // < 55 %
+  }
+
+  return { deficitCa, silnyDeficitCa };
+}
+
 // === Jádro: vyhodnocení jednoho bodu ===
 function vyhodnotVapneniBod(bod) {
-  const pH    = Number(bod['PH']);
-  const kvk   = Number(bod['KVK']);
-  const ca    = Number(bod['CA']);
-  const mg    = Number(bod['MG']);
-  const org   = Number(bod['ORG_HMOTA']);
-  const caPlus = Number(bod['Ca2+']);  // deficit/nadbytek Ca
-  const mgPlus = Number(bod['Mg2+']);  // deficit/nadbytek Mg
-  const kPlus  = Number(bod['K+']);    // deficit/nadbytek K
+  const pH     = Number(bod['PH']);
+  const kvk    = Number(bod['KVK']);
+  const ca     = Number(bod['CA']);
+  const mg     = Number(bod['MG']);
+  const org    = Number(bod['ORG_HMOTA']);
+  const caPlus = Number(bod['Ca2+']);
+  const mgPlus = Number(bod['Mg2+']);
+  const kPlus  = Number(bod['K+']);
+
+  const satCa  = Number(bod['nasycení Ca']);
+  const satMg  = Number(bod['nasycení Mg']);
+  const satK   = Number(bod['nasycení K']);
 
   if (isNaN(pH) || isNaN(kvk)) {
     return {
@@ -116,55 +133,56 @@ function vyhodnotVapneniBod(bod) {
       vapnit: false,
       duvod:
         `pH = ${pH.toFixed(1)} (vyšší/vysoké), typ půdy ${typ}. ` +
-        `Ca ≈ ${ca.toFixed(0)} ppm (Ca2+ = ${isNaN(caPlus) ? 'n/a' : caPlus.toFixed(0)}). ` +
-        `Zásobní vápnění se v této reakci nedoporučuje; fosfor řešit plodinově, bez zásobních dávek kvůli blokacím.`
+        `Ca ≈ ${ca.toFixed(0)} ppm, nasycení Ca ≈ ${isNaN(satCa) ? 'n/a' : satCa.toFixed(1)} %. ` +
+        `Zásobní vápnění se při takto vysokém pH nedoporučuje kvůli riziku blokace P; řešit spíš plodinově a strukturou půdy.`
     };
   }
 
-  // 2) Silný deficit Ca2+ → vždy vápnit (pokud pH < 7)
-  const silnyDeficitCa = !isNaN(caPlus) && caPlus <= -200;
+  // 2) Nasycení Ca
+  const { deficitCa, silnyDeficitCa } = vyhodnotNasyceni(typ, satCa, satMg, satK);
 
-  // 3) Tabulka říká „něco dát“?
-  const tabulkaMaDavku =
-    zapis &&
-    (zapis.prodA > 0 || zapis.prodB > 0);
+  // 3) Silný deficit Ca z nasycení nebo z Ca2+ bodů
+  const silnyDeficitCa2 = !isNaN(caPlus) && caPlus <= -200;
+  const silnyDeficit = silnyDeficitCa || silnyDeficitCa2;
 
-  // pokud není záznam v tabulce a zároveň není silný deficit, nevápnit
-  if (!tabulkaMaDavku && !silnyDeficitCa) {
+  // 4) Má tabulka nějakou dávku?
+  const tabulkaMaDavku = !!(zapis && (zapis.prodA > 0 || zapis.prodB > 0));
+
+  // Pokud není dávka a není ani deficit Ca → nevápnit
+  if (!tabulkaMaDavku && !deficitCa && !silnyDeficit) {
     return {
       vapnit: false,
       duvod:
-        `pH = ${pH.toFixed(1)}, typ půdy ${typ}. V tabulce „vapno objemy“ není pro tuto kombinaci pH a KVK zásobní dávka ` +
-        `a Ca2+ neukazuje výrazný deficit (${isNaN(caPlus) ? 'n/a' : caPlus.toFixed(0)}). ` +
-        `Strategie: zatím nevápnit, sledovat vývoj pH a organiky (ORG = ${isNaN(org) ? 'n/a' : org.toFixed(1)} %).`
+        `pH = ${pH.toFixed(1)}, typ půdy ${typ}. Tabulka „vapno objemy“ nedává zásobní dávku a ` +
+        `nasycení Ca ≈ ${isNaN(satCa) ? 'n/a' : satCa.toFixed(1)} % je kolem optima, Ca2+ = ${isNaN(caPlus) ? 'n/a' : caPlus.toFixed(0)}. ` +
+        `Zatím nevápnit, sledovat vývoj pH a organiky (ORG = ${isNaN(org) ? 'n/a' : org.toFixed(1)} %).`
     };
   }
 
-  // 4) Výběr produktu a dávky
+  // 5) Výběr produktu
   const produktNazev = vyberProdukt(mgPlus);
-  // základní dávka z tabulky – vybereme konkrétní produkt až teď
-  let davkaZTabulky;
-  if (mgPlus < 0) {
-    davkaZTabulky = zapis ? zapis.prodA : 0;
-  } else {
-    davkaZTabulky = zapis ? zapis.prodB : 0;
+
+  let davkaZTabulky = 0;
+  if (zapis) {
+    davkaZTabulky = mgPlus < 0 ? zapis.prodA : zapis.prodB;
   }
 
-  // Pokud je silný deficit Ca2+, nesmí být dávka nulová – vezmeme minimálně „německé doporučení“
   let davka = davkaZTabulky;
-  if (silnyDeficitCa && (!zapis || davka <= 0)) {
-    davka = zapis && zapis.nemecko > 0 ? zapis.nemecko : 3.0; // konzervativní minimum
+
+  // Pokud je silný deficit (nasycení nebo Ca2+), dávka nesmí být nula → použij min. německé doporučení
+  if (silnyDeficit && (!zapis || davka <= 0)) {
+    davka = zapis && zapis.nemecko > 0 ? zapis.nemecko : 3.0;
   }
 
-  // U velmi silných deficitů (např. caPlus < -500) dávku o něco navýšíme, ale ne přes 5 t/ha
-  if (silnyDeficitCa && caPlus <= -500) {
+  // U silného deficitu lehce přitvrdit, ale držet se v rozmezí 0.5–5 t/ha
+  if (silnyDeficit) {
     davka *= 1.2;
   }
 
   if (davka < 0.5) davka = 0.5;
   if (davka > 5.0) davka = 5.0;
 
-  const interval = (zapis && zapis.interval) || 4; // fallback 4 roky
+  const interval = (zapis && zapis.interval) || 4;
 
   return {
     vapnit: true,
@@ -173,15 +191,15 @@ function vyhodnotVapneniBod(bod) {
     interval_let: interval,
     duvod:
       `pH = ${pH.toFixed(1)}, typ půdy ${typ}. ` +
-      `Ca ≈ ${ca.toFixed(0)} ppm (Ca2+ = ${isNaN(caPlus) ? 'n/a' : caPlus.toFixed(0)}), ` +
-      `Mg ≈ ${mg.toFixed(0)} ppm (Mg2+ = ${isNaN(mgPlus) ? 'n/a' : mgPlus.toFixed(0)}), ` +
-      `K+ = ${isNaN(kPlus) ? 'n/a' : kPlus.toFixed(0)}, ORG = ${isNaN(org) ? 'n/a' : org.toFixed(1)} %. ` +
-      (silnyDeficitCa
-        ? `Ca2+ je v silném deficitu → volena zásobní dávka ${davka.toFixed(1)} t/ha (produkt: ${produktNazev}), `
-          + `opakovat přibližně každých ${interval} let. `
-        : `Dávka ${davka.toFixed(1)} t/ha (produkt: ${produktNazev}) vychází z tabulky „vapno objemy“, `
-          + `s intervalem opakování cca ${interval} let. `) +
-      `Dávka je myšlená jako zásobní na více let, ne jako jednorázové dorovnání na cílové nasycení.`
+      `KVK ≈ ${kvk.toFixed(1)}, nasycení Ca ≈ ${isNaN(satCa) ? 'n/a' : satCa.toFixed(1)} %, ` +
+      `Mg ≈ ${mg.toFixed(0)} ppm (nasycení Mg ≈ ${isNaN(satMg) ? 'n/a' : satMg.toFixed(1)} %), ` +
+      `K+ = ${isNaN(kPlus) ? 'n/a' : kPlus.toFixed(0)} (nasycení K ≈ ${isNaN(satK) ? 'n/a' : satK.toFixed(1)} %). ` +
+      (silnyDeficit
+        ? `Ca je v deficitu (nasycení/Ca2+), proto zásobní dávka ${davka.toFixed(1)} t/ha produktu (${produktNazev}), ` +
+          `opakovat zhruba každých ${interval} let. `
+        : `Dávka ${davka.toFixed(1)} t/ha (${produktNazev}) vychází z tabulky „vapno objemy“ při daném pH a KVK ` +
+          `s intervalem asi ${interval} let. `) +
+      `Jde o zásobní vápnění, ne o jednorázové dorovnání na „ideální“ procenta.`
   };
 }
 
