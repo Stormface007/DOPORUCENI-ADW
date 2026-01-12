@@ -9,7 +9,9 @@ async function loadAnalyses() {
 function getUniqueFields(rows) {
   const map = new Map();
   rows.forEach(row => {
-    const key = row['Název'];               // POZOR na diakritiku a velké N
+    const key = row['Název'];                   // hlavička z Google Sheets
+    if (!key) return;                           // přeskoč prázdné řádky
+
     if (!map.has(key)) {
       map.set(key, {
         key,
@@ -22,7 +24,6 @@ function getUniqueFields(rows) {
   return Array.from(map.values());
 }
 
-
 function renderFields(fields) {
   const container = document.getElementById('fieldsContainer');
   container.innerHTML = '';
@@ -34,15 +35,26 @@ function renderFields(fields) {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.id = id;
-    checkbox.value = f.key;          // klíč = název pole
+    checkbox.value = f.key;
 
     const label = document.createElement('label');
     label.htmlFor = id;
-    // dříve: `${f.čtverec} | ${f.zkod} | ${f.název}`
-    label.textContent = f.název;     // zobrazí se jen název
+    label.textContent = f.název;               // jen název pole
 
     wrapper.appendChild(checkbox);
     wrapper.appendChild(label);
     container.appendChild(wrapper);
   });
 }
+
+// napojení na tlačítko v index.html
+document.getElementById('loadFieldsBtn').addEventListener('click', async () => {
+  try {
+    const rows = await loadAnalyses();
+    const fields = getUniqueFields(rows);
+    renderFields(fields);
+  } catch (e) {
+    alert('Chyba při načítání: ' + e.message);
+  }
+});
+
