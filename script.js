@@ -174,4 +174,84 @@ function vyhodnotVapneniBod(bod) {
     duvod:
       `pH = ${pH.toFixed(1)}, typ půdy ${typ}. ` +
       `Ca ≈ ${ca.toFixed(0)} ppm (Ca2+ = ${isNaN(caPlus) ? 'n/a' : caPlus.toFixed(0)}), ` +
-      `Mg ≈ ${mg.toFixed(0)} ppm (Mg2+ = ${isNaN(mgPlu
+      `Mg ≈ ${mg.toFixed(0)} ppm (Mg2+ = ${isNaN(mgPlus) ? 'n/a' : mgPlus.toFixed(0)}), ` +
+      `K+ = ${isNaN(kPlus) ? 'n/a' : kPlus.toFixed(0)}, ORG = ${isNaN(org) ? 'n/a' : org.toFixed(1)} %. ` +
+      (silnyDeficitCa
+        ? `Ca2+ je v silném deficitu → volena zásobní dávka ${davka.toFixed(1)} t/ha (produkt: ${produktNazev}), `
+          + `opakovat přibližně každých ${interval} let. `
+        : `Dávka ${davka.toFixed(1)} t/ha (produkt: ${produktNazev}) vychází z tabulky „vapno objemy“, `
+          + `s intervalem opakování cca ${interval} let. `) +
+      `Dávka je myšlená jako zásobní na více let, ne jako jednorázové dorovnání na cílové nasycení.`
+  };
+}
+
+// === Vyhodnocení pro celé pole ===
+function vyhodnotVapneniPole(nazevPole) {
+  const bodyPole = allRows.filter(r => r['Název'] === nazevPole);
+  if (!bodyPole.length) {
+    return '<p>Pro pole "' + nazevPole + '" nebyly nalezeny žádné body.</p>';
+  }
+
+  const items = bodyPole.map(bod => {
+    const cislo = bod['Číslo bodu'];
+    const res = vyhodnotVapneniBod(bod);
+
+    if (res.vapnit) {
+      return `<li><strong>Bod ${cislo}</strong>: VÁPNIT – produkt: ${res.produkt}, ` +
+             `dávka: ${res.davka_t_ha.toFixed(1)} t/ha, interval: cca ${res.interval_let} let.<br>` +
+             `Důvod: ${res.duvod}</li>`;
+    } else {
+      return `<li><strong>Bod ${cislo}</strong>: NEVÁPNIT – ${res.duvod}</li>`;
+    }
+  });
+
+  return `<ul>${items.join('')}</ul>`;
+}
+
+// === MODAL – otevření / zavření ===
+function initModal() {
+  const modal = document.getElementById('vapneniModal');
+  const openBtn = document.getElementById('openModalBtn');
+  const closeBtn = document.getElementById('closeModalBtn');
+  const evaluateBtn = document.getElementById('evaluateBtn');
+
+  openBtn.addEventListener('click', async () => {
+    try {
+      if (!allRows.length) {
+        allRows = await loadAnalyses();
+        const fields = getUniqueFields(allRows);
+        fillFieldSelect(fields);
+      }
+      modal.style.display = 'block';
+    } catch (e) {
+      alert('Chyba při načítání dat: ' + e.message);
+    }
+  });
+
+  closeBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+
+  window.addEventListener('click', (e) => {
+    if (e.target === modal) modal.style.display = 'none';
+  });
+
+  evaluateBtn.addEventListener('click', () => {
+    const select = document.getElementById('fieldSelect');
+    const nazevPole = select.value;
+    const resultsDiv = document.getElementById('resultsContainer');
+
+    if (!nazevPole) {
+      resultsDiv.textContent = 'Nejprve vyber pole.';
+      return;
+    }
+
+    const html = vyhodnotVapneniPole(nazevPole);
+    resultsDiv.innerHTML = html;
+  });
+}
+
+// === inicializace po načtení stránky ===
+document.addEventListener('DOMContentLoaded', () => {
+  initModal();
+});
