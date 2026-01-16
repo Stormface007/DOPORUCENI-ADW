@@ -104,13 +104,11 @@ function vyhodnotNasyceni(typ, satCa, satMg, satK) {
 
 // ========== Bodová logika vápnění ==========
 
-function vyhodnotVapneniBod(bod) {
-  // 1) Načtení vstupů z analýzy
+function vyhodnotVapneniBod(bod, forcedProduct) {
   const pH  = Number(bod['PH']);
   const kvk = Number(bod['KVK']);
-  const mg  = Number(bod['MG']); // Mg v půdě (mg/kg) – pro volbu produktu
+  const mg  = Number(bod['MG']); // použije se jen když není forcedProduct
 
-  // 2) Bez pH nebo KVK nelze doporučení spočítat
   if (isNaN(pH) || isNaN(kvk)) {
     return {
       vapnit: false,
@@ -125,9 +123,8 @@ function vyhodnotVapneniBod(bod) {
     };
   }
 
-  // 3) pH > 6,5 → zásobní vápnění se nedoporučuje (shodně s Excelem)
   if (pH > 6.5) {
-    const typPudy = urciTypPudy(kvk);  // Lehká / Střední / Těžká
+    const typPudy = urciTypPudy(kvk);
     return {
       vapnit: false,
       caco3_t_ha: null,
@@ -141,11 +138,9 @@ function vyhodnotVapneniBod(bod) {
     };
   }
 
-  // 4) Určení typu půdy (podle KVK) a pH třídy
-  const typPudy = urciTypPudy(kvk);      // 'Lehká' / 'Střední' / 'Těžká'
-  const phTrida = urciPhTridu(pH);       // '<5,0' / '5,0–5,5' / '5,6–6,0' / '>6,0'
+  const typPudy = urciTypPudy(kvk);
+  const phTrida = urciPhTridu(pH);
 
-  // 5) Vytažení německé dávky CaCO3 a intervalu z tabulky
   const radek = nemeckaTabulka[typPudy] && nemeckaTabulka[typPudy][phTrida];
 
   if (!radek || !radek.caco3) {
@@ -162,37 +157,33 @@ function vyhodnotVapneniBod(bod) {
     };
   }
 
-  const caco3 = radek.caco3;          // t/ha CaCO3
+  const caco3 = radek.caco3;
   const intervalText = radek.interval;
+  const Ca_target = caco3 * 360; // kg Ca/ha
 
-  // 6) Přepočet CaCO3 → cílový přísun Ca (kg Ca/ha)
-  // 1 t CaCO3 odpovídá 360 kg Ca
-  const Ca_target = caco3 * 360;
+  // KLÍČOVÉ: pokud je forcedProduct, použij ho, jinak vyber podle Mg
+  const prodKod = forcedProduct || vyberProduktPodleMg(mg);
+  const prod = produkty[prodKod];
 
-  // 7) Volba produktu A/B/C/D podle Mg v půdě
-  const prodKod = vyberProduktPodleMg(mg);  // 'A' / 'B' / 'C' / 'D'
-  const prod = produkty[prodKod];          // např. { Ca: 360, Mg: 6 }
-
-  // 8) Výpočet dávky produktu (t/ha) a dodaného Mg (kg/ha)
   const davka = Ca_target / prod.Ca;
   const mgDodano = davka * prod.Mg;
 
-  // 9) Výstup – strukturované doporučení pro daný bod
   return {
     vapnit: true,
-    caco3_t_ha: caco3,                          // referenční CaCO3 dávka (t/ha)
-    interval_text: intervalText,               // text intervalu z německé tabulky
-    produktKod: prodKod,                       // zvolený produkt A/B/C/D
-    davka_t_ha: Number(davka.toFixed(2)),      // dávka produktu (t/ha)
-    mg_dodano: Number(mgDodano.toFixed(1)),    // dodaný Mg (kg/ha)
-    typPudy,                                   // Lehká / Střední / Těžká
-    pHtxt: pH.toFixed(1),                      // pH jako text
+    caco3_t_ha: caco3,
+    interval_text: intervalText,
+    produktKod: prodKod,
+    davka_t_ha: Number(davka.toFixed(2)),
+    mg_dodano: Number(mgDodano.toFixed(1)),
+    typPudy,
+    pHtxt: pH.toFixed(1),
     duvod:
       `Německé doporučení: ${caco3.toFixed(1)} t/ha CaCO₃ (${intervalText}). ` +
-      `Přepočteno přes Ca ekvivalent na produkt ${prodKod}: ` +
-      `${davka.toFixed(2)} t/ha, Mg dodáno cca ${mgDodano.toFixed(1)} kg/ha.`
+      `Pro celé pole je zvolen produkt ${prodKod}, ` +
+      `přepočet přes Ca ekvivalent: ${davka.toFixed(2)} t/ha, Mg dodáno cca ${mgDodano.toFixed(1)} kg/ha.`
   };
 }
+
 
 function popisMg(mg) {
   if (isNaN(mg)) return 'zásoba Mg neznámá';
