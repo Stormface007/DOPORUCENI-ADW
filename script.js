@@ -216,29 +216,54 @@ function formatujLidsky(bod, res) {
 
 // Projde všechny body na poli, spočítá „hlasy“ pro A/B/C/D podle Mg
 function vyberProduktProPole(bodyPole) {
-  const hlasy = { A: 0, B: 0, C: 0, D: 0 };
+  const score = { A: 0, B: 0, C: 0, D: 0 };
 
   bodyPole.forEach(bod => {
-    const mg = Number(bod['MG']);          // zásoba Mg v půdě (mg/kg)
-    const kod = vyberProduktPodleMg(mg);   // A/B/C podle tvé funkce pro Mg
-    if (kod) {
-      hlasy[kod] = (hlasy[kod] || 0) + 1; // přičti jeden hlas pro daný produkt
+    const pH = Number(bod['PH']);
+    const mg = Number(bod['MG']);
+
+    if (isNaN(pH)) return;
+
+    // základní váha bodu podle kyselosti – čím nižší pH, tím důležitější bod
+    let vahaBodu = 1;
+    if (pH < 5.0) vahaBodu = 2.0;
+    else if (pH < 5.5) vahaBodu = 1.5;
+
+    // 1) každý produkt dostane základní „Ca“ skóre
+    // A má nejsilnější Ca „charakter“, C/D jsou víc Mg
+    score.A += 1.0 * vahaBodu;
+    score.B += 0.8 * vahaBodu;
+    score.C += 0.6 * vahaBodu;
+    score.D += 0.6 * vahaBodu;
+
+    // 2) korekce podle Mg v půdě – pokud je Mg velmi nízko, přidáme body C/D; pokud je vysoko, přidáme A
+    if (!isNaN(mg)) {
+      if (mg < 50) {
+        // velký nedostatek Mg → C/D silně zvýhodnit
+        score.C += 1.5 * vahaBodu;
+        score.D += 1.5 * vahaBodu;
+      } else if (mg <= 120) {
+        // střední Mg → B lehce preferovat
+        score.B += 0.5 * vahaBodu;
+      } else {
+        // Mg vysoké → A preferovat
+        score.A += 0.5 * vahaBodu;
+      }
     }
   });
 
-  // vyber produkt s největším počtem hlasů
   let vybranyKod = null;
-  let maxHlasy = 0;
-  Object.entries(hlasy).forEach(([k, v]) => {
-    if (v > maxHlasy) {
-      maxHlasy = v;
+  let maxScore = -Infinity;
+  Object.entries(score).forEach(([k, v]) => {
+    if (v > maxScore) {
+      maxScore = v;
       vybranyKod = k;
     }
   });
 
-  // může vrátit null, pokud žádný bod nedal hlas (např. chybí Mg)
   return vybranyKod;
 }
+
 
 // Krátký lidský popis zvoleného produktu pro celé pole
 function popisProduktuPole(kod) {
