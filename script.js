@@ -105,115 +105,83 @@ function vyhodnotNasyceni(typ, satCa, satMg, satK) {
 // ========== Bodová logika vápnění ==========
 
 function vyhodnotVapneniBod(bod) {
-  const pH     = Number(bod['PH']);
-  const kvk    = Number(bod['KVK']);
-  const ca     = Number(bod['CA']);
-  const mg     = Number(bod['MG']);
-  const org    = Number(bod['ORG_HMOTA']);
-
-  const caPlus = Number(bod['Ca2+']);
-  const mgPlus = Number(bod['Mg2+']);
-  const kPlus  = Number(bod['K+']);
-
-  const satCa  = Number(bod['nasycení Ca']);
-  const satMg  = Number(bod['nasycení Mg']);
-  const satK   = Number(bod['nasycení K']);
+  const pH  = Number(bod['PH']);
+  const kvk = Number(bod['KVK']);
+  const mg  = Number(bod['MG']); // mg v půdě pro volbu produktu
 
   if (isNaN(pH) || isNaN(kvk)) {
     return {
       vapnit: false,
-      davka_t_ha: 0,
-      interval_let: 0,
-      potrebujeMg: false,
-      duvod: 'Chybí pH nebo KVK, nelze spočítat doporučení vápnění.'
+      caco3_t_ha: null,
+      interval_text: 'Chybí pH nebo KVK',
+      produktKod: null,
+      davka_t_ha: null,
+      mg_dodano: null,
+      duvod: 'Chybí pH nebo KVK, nelze spočítat doporučení.'
     };
   }
 
-  const typ = urciTypPudy(kvk);
-  const rada = urciIntervalovyRadek(pH);
-  const zapis = vapnoTabulka[typ][rada];
-
-  // 1) Bezpečnostní brzda – pH příliš vysoké
-  if (pH >= 7.0) {
+  // 1) pH > 6.5 → nevápnit (stejně jako v Excelu – Vápnit? = false) [code_file:17]
+  if (pH > 6.5) {
     return {
       vapnit: false,
+      caco3_t_ha: null,
+      interval_text: 'Bez vápnění – pH > 6,5',
+      produktKod: null,
       davka_t_ha: 0,
-      interval_let: 0,
-      potrebujeMg: false,
-      duvod:
-        `pH = ${pH.toFixed(1)} (vysoké), typ půdy ${typ}. ` +
-        `Nasycení Ca ≈ ${isNaN(satCa) ? 'n/a' : satCa.toFixed(1)} %. ` +
-        `Zásobní vápnění by mohlo zhoršit dostupnost P i stav bioty, proto se nedoporučuje.`
+      mg_dodano: 0,
+      duvod: `pH = ${pH.toFixed(1)} > 6,5, zásobní vápnění se nedoporučuje.`
     };
   }
 
-  const nas = vyhodnotNasyceni(typ, satCa, satMg, satK);
+  // 2) typ půdy + pH třída → CaCO3 dávka + interval [code_file:16]
+  const typPudy = urciTypPudy(kvk);      // Lehká / Střední / Těžká
+  const phTrida = urciPhTridu(pH);
 
-  const silnyDeficitCa2 = !isNaN(caPlus) && caPlus <= -200;
-  const silnyDeficit = nas.silnyDeficitCa || silnyDeficitCa2;
+  const radek = nemeckaTabulka[typPudy] && nemeckaTabulka[typPudy][phTrida];
 
-  const tabulkaMaDavku = !!(zapis && (zapis.prodA > 0 || zapis.prodB > 0));
-
-  // Produkt preferovaný bodem – jen podle Mg
-  const potrebujeMg =
-    nas.deficitMg ||
-    (!isNaN(mgPlus) && mgPlus < 0) ||
-    (!isNaN(kPlus) && kPlus > 0 && nas.deficitMg); // K se bude doplňovat, Mg je nízko
-
-  // 2) Když tabulka nemá dávku a není ani deficit Ca → nevápnit
-  if (!tabulkaMaDavku && !nas.deficitCa && !silnyDeficit) {
+  if (!radek || !radek.caco3) {
     return {
       vapnit: false,
+      caco3_t_ha: null,
+      interval_text: 'Tabulka nemá doporučení',
+      produktKod: null,
       davka_t_ha: 0,
-      interval_let: 0,
-      potrebujeMg,
-      duvod:
-        `pH = ${pH.toFixed(1)}, typ ${typ}. Tabulka „vapno objemy“ nedává zásobní dávku ` +
-        `a nasycení Ca ≈ ${isNaN(satCa) ? 'n/a' : satCa.toFixed(1)} % není výrazně pod optimem.`
+      mg_dodano: 0,
+      duvod: `Pro kombinaci ${typPudy}, pH třída ${phTrida} není v tabulce CaCO₃ dávka.`
     };
   }
 
-  // 3) Základní dávka z tabulky – nezávislá na volbě konkrétního produktu; jen A/B mají jiné NV
-  let davka = 0;
-  if (zapis) {
-    // použijeme střed mezi A a B jako „chemickou“ dávku CaCO3
-    const prumer = (zapis.prodA + zapis.prodB) / 2 || zapis.nemecko || 0;
-    davka = prumer;
-  }
+  const caco3 = radek.caco3;          // t/ha CaCO3
+  const intervalText = radek.interval;
 
-  // 4) Silný deficit Ca → nesmí být nula, případně dávku lehce navýšit
-  if (silnyDeficit && (!zapis || davka <= 0)) {
-    davka = (zapis && zapis.nemecko > 0) ? zapis.nemecko : 3.0;
-  }
-  if (silnyDeficit) {
-    davka *= 1.2;
-  }
+  // 3) spočítat Ca_target (kg Ca/ha) z CaCO3 dávky [code_file:14]
+  const Ca_target = caco3 * 360;      // 360 kg Ca/t referenčně
 
-  // 5) Ořezání na rozumné meze
-  if (davka < 0.5) davka = 0.5;
-  if (davka > 5.0) davka = 5.0;
+  // 4) vybrat produkt podle Mg v půdě [code_file:17]
+  const prodKod = vyberProduktPodleMg(mg);
+  const prod = produkty[prodKod];
 
-  const interval = (zapis && zapis.interval) || (typ === 'tezka' ? 5 : typ === 'lehka' ? 3 : 4);
+  // 5) dávka produktu (t/ha) a Mg dodáno (kg/ha) [code_file:14]
+  const davka = Ca_target / prod.Ca;
+  const mgDodano = davka * prod.Mg;
 
   return {
     vapnit: true,
-    davka_t_ha: Number(davka.toFixed(1)),
-    interval_let: interval,
-    potrebujeMg,
+    caco3_t_ha: caco3,
+    interval_text: intervalText,
+    produktKod: prodKod,                     // 'A' / 'B' / 'C' / 'D'
+    davka_t_ha: Number(davka.toFixed(2)),    // stejně jako v CSV [code_file:16]
+    mg_dodano: Number(mgDodano.toFixed(1)),
     duvod:
-      `pH = ${pH.toFixed(1)}, KVK ≈ ${kvk.toFixed(1)} (${typ} půda). ` +
-      `Nasycení Ca ≈ ${isNaN(satCa) ? 'n/a' : satCa.toFixed(1)} %, Mg ≈ ${isNaN(satMg) ? 'n/a' : satMg.toFixed(1)} %, ` +
-      `K ≈ ${isNaN(satK) ? 'n/a' : satK.toFixed(1)} %. ` +
-      `Ca²⁺ = ${isNaN(caPlus) ? 'n/a' : caPlus.toFixed(0)}, Mg²⁺ = ${isNaN(mgPlus) ? 'n/a' : mgPlus.toFixed(0)}, ` +
-      `K⁺ = ${isNaN(kPlus) ? 'n/a' : kPlus.toFixed(0)}. ` +
-      (silnyDeficit
-        ? `Ca je v silném deficitu, proto zásobní dávka ${davka.toFixed(1)} t/ha. `
-        : `Dávka ${davka.toFixed(1)} t/ha vychází z tabulky „vapno objemy“ pro dané pH a KVK. `) +
-      `Interval opakování orientačně ${interval} let; jde o zásobní vápnění, ne jednorázové dorovnání ideálních procent.`
+      `Typ půdy ${typPudy}, pH ${pH.toFixed(1)} (třída ${phTrida}). ` +
+      `Německé doporučení: ${caco3.toFixed(1)} t/ha CaCO₃ ` +
+      `(${intervalText}). ` +
+      `Přepočteno přes Ca ekvivalent na produkt ${prodKod}: ` +
+      `${davka.toFixed(2)} t/ha, Mg dodáno cca ${mgDodano.toFixed(1)} kg/ha.`
   };
 }
 
-// ========== Vyhodnocení pro celé pole (výběr produktu) ==========
 
 function vyhodnotVapneniPole(nazevPole) {
   const bodyPole = allRows.filter(r => r['Název'] === nazevPole);
@@ -226,65 +194,68 @@ function vyhodnotVapneniPole(nazevPole) {
     return { bod, res };
   });
 
-  // Hlasy pro produkt A (Ca+Mg) vs B (Ca)
-  let hlasyA = 0;
-  let hlasyB = 0;
-
+  // Hlasy pro produkt podle Mg – jen A/B/C/D, ale pole chceme jedním produktem
+  const hlasy = { A: 0, B: 0, C: 0, D: 0 };
   vysledkyBodu.forEach(({ res }) => {
-    if (res.potrebujeMg) hlasyA += 1;
-    else hlasyB += 1;
-  });
-
-  const pocetBodu = vysledkyBodu.length;
-  const podilA = pocetBodu ? hlasyA / pocetBodu : 0;
-
-  // Rozhodovací pravidlo: pokud je výraznější potřeba Mg, vezmeme A pro celé pole
-  // – stačí buď podíl > 0.3, nebo aspoň jeden bod s velmi nízkým Mg (už obsaženo v potrebujeMg)
-  const zvolProduktA = podilA > 0.3 || (hlasyA > 0 && hlasyB === 0);
-  const produktNazev = zvolProduktA
-    ? 'Produkt A (dolomitický – Ca + Mg)'
-    : 'Produkt B (vápenec – převážně Ca)';
-
-  // Z pole spočítáme orientační průměrnou dávku a interval (jen info do shrnutí)
-  let soucetDávek = 0;
-  let soucetIntervalu = 0;
-  let pocetVapnenych = 0;
-
-  vysledkyBodu.forEach(({ res }) => {
-    if (res.vapnit && res.davka_t_ha > 0) {
-      soucetDávek += res.davka_t_ha;
-      soucetIntervalu += res.interval_let;
-      pocetVapnenych += 1;
+    if (res.vapnit && res.produktKod) {
+      hlasy[res.produktKod] = (hlasy[res.produktKod] || 0) + 1;
     }
   });
 
-  const prumerDavka = pocetVapnenych ? (soucetDávek / pocetVapnenych) : 0;
-  const prumerInterval = pocetVapnenych ? Math.round(soucetIntervalu / pocetVapnenych) : 0;
+  // Vyber produkt s nejvíce hlasy
+  let vybranyKod = null;
+  let maxHlasy = 0;
+  Object.entries(hlasy).forEach(([k, v]) => {
+    if (v > maxHlasy) {
+      maxHlasy = v;
+      vybranyKod = k;
+    }
+  });
+
+  const produktNazev = vybranyKod
+    ? `Produkt ${vybranyKod}`
+    : 'Žádný produkt (pole se nyní nevápní)';
+
+  // Přepočet průměrné dávky pro vybraný produkt
+  let soucetD = 0;
+  let pocet = 0;
+
+  vysledkyBodu.forEach(({ res }) => {
+    if (res.vapnit && res.produktKod === vybranyKod && res.davka_t_ha) {
+      soucetD += res.davka_t_ha;
+      pocet += 1;
+    }
+  });
+
+  const prumerDavka = pocet ? (soucetD / pocet) : 0;
 
   const shrnutiPole = `
     <p><strong>Produkt pro celé pole:</strong> ${produktNazev}</p>
-    ${pocetVapnenych
-      ? `<p>Na části bodů vychází vápnění s průměrnou zásobní dávkou přibližně ${prumerDavka.toFixed(1)} t/ha a intervalem kolem ${prumerInterval} let. 
-         Konkrétní dávky pro body jsou níže; pole se ale vždy vápní jedním produktem.</p>`
-      : `<p>Pro žádný bod nevychází jednoznačná potřeba zásobního vápnění – pole se nyní nevápní.</p>`}
+    ${pocet
+      ? `<p>Průměrná zásobní dávka (jen body s vápněním a tímto produktem) ≈ ${prumerDavka.toFixed(2)} t/ha. 
+         Konkrétní body jsou níže.</p>`
+      : `<p>Pro žádný bod nevychází potřeba vápnit tímto produktem.</p>`}
   `;
 
   const items = vysledkyBodu.map(({ bod, res }) => {
     const cislo = bod['Číslo bodu'];
     const davkaText = res.vapnit
-      ? `${res.davka_t_ha.toFixed(1)} t/ha`
+      ? `${res.davka_t_ha?.toFixed(2) || '0.00'} t/ha`
       : '0 t/ha (nevápnit)';
+
+    const prodText = res.produktKod ? `Produkt ${res.produktKod}` : '---';
 
     return `
       <li>
-        <strong>Bod ${cislo}</strong>: dávka ${davkaText}, produkt: ${produktNazev}, interval: ${res.interval_let || '---'} let.<br>
-        Důvod: ${res.duvod}
+        <strong>Bod ${cislo}</strong>: dávka ${davkaText}, produkt: ${prodText}, interval: ${res.interval_text || '---'}.<br>
+        ${res.duvod}
       </li>
     `;
   });
 
   return shrnutiPole + `<ul>${items.join('')}</ul>`;
 }
+
 
 // ========== MODAL UI ==========
 
@@ -335,4 +306,56 @@ function initModal() {
 document.addEventListener('DOMContentLoaded', () => {
   initModal();
 });
+
+// ========== Pomocné funkce ==========
+
+function urciTypPudy(kvk) {
+  if (kvk < 120) return 'Lehká';
+  if (kvk <= 200) return 'Střední';
+  return 'Těžká';
+}
+
+function urciPhTridu(pH) {
+  if (pH < 5.0) return '<5,0';
+  if (pH <= 5.5) return '5,0–5,5';
+  if (pH <= 6.0) return '5,6–6,0';
+  return '>6,0';
+}
+
+// Německé pevné dávky CaCO3 (t/ha) + intervaly – přímo z tabulky [code_file:16][file:2]
+const nemeckaTabulka = {
+  'Lehká': {
+    '<5,0':   { caco3: 2.0, interval: 'každé 2 roky' },
+    '5,0–5,5': { caco3: 1.5, interval: 'každé 2–3 roky' },
+    '>5,5':   { caco3: 1.0, interval: 'každé 3 roky' }
+  },
+  'Střední': {
+    '<5,0':   { caco3: 3.0, interval: 'každé 3 roky' },
+    '5,0–5,5': { caco3: 2.5, interval: 'každé 3–4 roky' },
+    '5,6–6,0': { caco3: 2.0, interval: 'každé 4 roky' },
+    '>6,0':   { caco3: 1.5, interval: 'každé 4 roky' }
+  },
+  'Těžká': {
+    '<5,0':   { caco3: 4.0, interval: 'každých 4–5 let' },
+    '5,0–5,5': { caco3: 3.0, interval: 'každých 5 let' },
+    '5,6–6,0': { caco3: 2.5, interval: 'každých 5–6 let' },
+    '>6,0':   { caco3: 2.0, interval: 'každých 6 let' }
+  }
+};
+
+// Obsah Ca a Mg v produktech (kg/t) – stejné jako v excelu [code_file:14]
+const produkty = {
+  A: { Ca: 360, Mg: 6 },
+  B: { Ca: 256, Mg: 60 },
+  C: { Ca: 200, Mg: 109 },
+  D: { Ca: 220, Mg: 127 }
+};
+
+// Výběr produktu podle Mg v půdě – shodně s logikou v Excelu [code_file:17]
+function vyberProduktPodleMg(mgSoil) {
+  if (mgSoil < 50) return 'C';       // velmi nízký Mg → silně Mg produkt
+  if (mgSoil <= 120) return 'B';     // střední Mg → balancovaný
+  return 'A';                        // vysoký Mg → Ca bez Mg
+}
+
 
