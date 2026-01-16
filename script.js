@@ -294,10 +294,11 @@ function vyhodnotVapneniPole(nazevPole) {
   }
 
   // 2) spočítáme doporučení pro každý bod – už s pevně zvoleným produktem pro pole
-  const vysledkyBodu = bodyPole.map(bod => {
-    const res = vyhodnotVapneniBod(bod, produktKodPole); // předáme produkt pro pole
-    return { bod, res };
-  });
+ // musí být:
+const vysledkyBodu = bodyPole.map(bod => {
+  const res = vyhodnotVapneniBod(bod, produktKodPole); // vynutit produkt pro pole
+  return { bod, res };
+});
 
   // 3) průměrná dávka (jen body, kde se má vápnit)
   let soucetD = 0;
